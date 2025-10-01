@@ -1,3 +1,8 @@
+![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+
+![Hadoop](https://img.shields.io/badge/Hadoop-3.3.0-yellow)
+![Status](https://img.shields.io/badge/status-stable-brightgreen)
+
 # 🎯 Détection de Clients à Risque de Churn avec Hadoop MapReduce
 
 ## 📋 Problématique Métier
