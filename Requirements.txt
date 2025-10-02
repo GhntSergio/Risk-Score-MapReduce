@@ -1,2 +1,4 @@
 # requirements.txt
 faker==20.0.0
+#test dependencies
+pytest==7.4.0  
