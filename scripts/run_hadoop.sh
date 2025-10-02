@@ -1,103 +1,73 @@
 #!/bin/bash
+# --------------------------------------------------------
+# Script d'exécution du job Hadoop Streaming (détection de churn)
+# Usage: ./run_hadoop.sh [input_path_hdfs] [output_path_hdfs]
+# --------------------------------------------------------
 
-# Script d'exécution du job Hadoop Streaming pour la détection de churn
-# Usage: ./run_hadoop.sh [input_path] [output_path]
-
-set -e  # Arrêter en cas d'erreur
+set -e  # Arrêt en cas d'erreur
 
 # Configuration par défaut
 DEFAULT_INPUT="/user/input/churn_data"
 DEFAULT_OUTPUT="/user/output/churn_results"
-HADOOP_STREAMING_JAR="$HADOOP_HOME/share/hadoop/tools/lib/hadoop-streaming-*.jar"
+HADOOP_STREAMING_JAR="$HADOOP_HOME/share/hadoop/tools/lib/hadoop-streaming-3.4.1.jar"
 
-# Paramètres
+# Paramètres (priorité aux arguments passés au script)
 INPUT_PATH=${1:-$DEFAULT_INPUT}
 OUTPUT_PATH=${2:-$DEFAULT_OUTPUT}
 
-# Chemins des scripts
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-MAPPER_PATH="$PROJECT_DIR/mapper_reducer/mapper.py"
-REDUCER_PATH="$PROJECT_DIR/mapper_reducer/reducer.py"
+# Répertoires des scripts (montés depuis l’hôte dans le conteneur)
+SCRIPT_DIR="/scripts"
+MAPPER_PATH="$SCRIPT_DIR/mapper.py"
+REDUCER_PATH="$SCRIPT_DIR/reducer.py"
 
-echo "🚀 Lancement du job Hadoop Streaming pour la détection de churn"
-echo "📁 Répertoire d'entrée: $INPUT_PATH"
-echo "📁 Répertoire de sortie: $OUTPUT_PATH"
+echo "🚀 Lancement du job Hadoop Streaming"
+echo "📁 Input HDFS: $INPUT_PATH"
+echo "📁 Output HDFS: $OUTPUT_PATH"
 echo "🗂️ Mapper: $MAPPER_PATH"
 echo "🗂️ Reducer: $REDUCER_PATH"
 
-# Vérifier que les fichiers existent
-if [ ! -f "$MAPPER_PATH" ]; then
-    echo "❌ Erreur: Mapper non trouvé à $MAPPER_PATH"
-    exit 1
-fi
+# Vérification des fichiers
+[ -f "$MAPPER_PATH" ] || { echo "❌ Mapper introuvable: $MAPPER_PATH"; exit 1; }
+[ -f "$REDUCER_PATH" ] || { echo "❌ Reducer introuvable: $REDUCER_PATH"; exit 1; }
 
-if [ ! -f "$REDUCER_PATH" ]; then
-    echo "❌ Erreur: Reducer non trouvé à $REDUCER_PATH"
-    exit 1
-fi
+# Vérification Hadoop
+[ -n "$HADOOP_HOME" ] || { echo "❌ Erreur: HADOOP_HOME non défini"; exit 1; }
+[ -f "$HADOOP_STREAMING_JAR" ] || { echo "❌ Erreur: jar Hadoop Streaming introuvable"; exit 1; }
 
-# Vérifier que Hadoop est configuré
-if [ -z "$HADOOP_HOME" ]; then
-    echo "❌ Erreur: HADOOP_HOME n'est pas défini"
-    exit 1
-fi
+echo "📦 JAR Streaming: $HADOOP_STREAMING_JAR"
 
-# Trouver le JAR Hadoop Streaming
-STREAMING_JAR=$(ls $HADOOP_STREAMING_JAR 2>/dev/null | head -1)
-if [ -z "$STREAMING_JAR" ]; then
-    echo "❌ Erreur: JAR Hadoop Streaming non trouvé dans $HADOOP_STREAMING_JAR"
-    exit 1
-fi
+# Nettoyage sortie
+echo "🧹 Suppression de l’ancienne sortie (si existe)..."
+hdfs dfs -rm -r -f -skipTrash "$OUTPUT_PATH" || true
 
-echo "📦 JAR Streaming: $STREAMING_JAR"
+# Rendre exécutables
+chmod +x "$MAPPER_PATH" "$REDUCER_PATH"
 
-# Supprimer le répertoire de sortie s'il existe
-echo "🧹 Nettoyage du répertoire de sortie..."
-hdfs dfs -rm -r -f "$OUTPUT_PATH"
+echo "⚡ Exécution du job..."
 
-# Rendre les scripts exécutables
-chmod +x "$MAPPER_PATH"
-chmod +x "$REDUCER_PATH"
-
-echo "⚡ Exécution du job MapReduce..."
-
-# Lancer le job Hadoop Streaming
-hadoop jar "$STREAMING_JAR" \
+# Lancement du job Hadoop Streaming
+hadoop jar "$HADOOP_STREAMING_JAR" \
     -files "$MAPPER_PATH","$REDUCER_PATH" \
-    -mapper "python3 mapper.py" \
-    -reducer "python3 reducer.py" \
+    -mapper "./mapper.py" \
+    -reducer "./reducer.py" \
     -input "$INPUT_PATH" \
     -output "$OUTPUT_PATH" \
     -cmdenv PYTHONIOENCODING=utf-8
 
-# Vérifier le succès
+# Vérification du succès
 if [ $? -eq 0 ]; then
-    echo "✅ Job terminé avec succès!"
-    echo "📊 Résultats disponibles dans: $OUTPUT_PATH"
-    
-    echo "🔍 Aperçu des résultats:"
+    echo "✅ Job terminé avec succès"
+    echo "📊 Résultats (aperçu 20 lignes) :"
     hdfs dfs -cat "$OUTPUT_PATH/part-00000" | head -20
-    
+
     echo ""
-    echo "📈 Statistiques:"
-    echo "Nombre total de clients analysés:"
-    hdfs dfs -cat "$OUTPUT_PATH/part-*" | wc -l
-    
-    echo "Clients à risque (RISK):"
-    hdfs dfs -cat "$OUTPUT_PATH/part-*" | grep -c "RISK" || echo "0"
-    
-    echo "Clients OK:"
-    hdfs dfs -cat "$OUTPUT_PATH/part-*" | grep -c "OK" || echo "0"
-    
+    echo "📈 Statistiques globales :"
+    hdfs dfs -cat "$OUTPUT_PATH/part-*" | cut -f2 | sort | uniq -c
 else
     echo "❌ Échec du job MapReduce"
     exit 1
 fi
 
 echo ""
-echo "🎯 Pour récupérer tous les résultats:"
+echo "🎯 Pour rapatrier les résultats localement :"
 echo "hdfs dfs -get $OUTPUT_PATH ./results"
-echo ""
-echo "🔄 Pour relancer avec d'autres paramètres:"
-echo "$0 <chemin_entrée> <chemin_sortie>"
