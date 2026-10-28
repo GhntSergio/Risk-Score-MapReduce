@@ -4,6 +4,8 @@
 
 # 🎯 Détection de Clients à Risque de Churn avec Hadoop MapReduce
 
+> 🇬🇧 **English summary:** Detects customers at risk of churn with Hadoop MapReduce jobs written in Python, with use cases in telecom, banking and SaaS.
+
 ## 📋 Problématique Métier
 
 Dans les secteurs des télécommunications, de la banque et du SaaS, identifier les clients susceptibles de partir (churn) est crucial pour la rétention. Ce projet analyse des logs d'usage massifs pour détecter automatiquement les clients à faible engagement, indicateur clé du risque de churn.
